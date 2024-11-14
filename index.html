@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Discordn't Web App</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+      }
+      #chatContainer {
+        margin-top: 20px;
+      }
+      #messageDisplay {
+        height: 300px;
+        overflow-y: auto;
+        border: 1px solid #ccc;
+        padding: 10px;
+      }
+      .message {
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #eee;
+        padding: 5px 0;
+      }
+      .message:last-child {
+        border-bottom: none;
+      }
+      .username {
+        width: 100px;
+        font-weight: bold;
+        margin-right: 10px;
+      }
+      .text {
+        flex: 1;
+      }
+      .delete-button {
+        margin-left: 10px;
+        padding: 5px 10px;
+        background-color: #e74c3c;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+      .delete-button:hover {
+        background-color: #c0392b;
+      }
+      #messageInput {
+        width: 70%;
+        padding: 10px;
+      }
+      #sendButton,
+      #logoutButton {
+        padding: 10px 20px;
+        margin-left: 10px;
+        background-color: #add8e6;
+      }
+      #loginForm {
+        margin-top: 50px;
+        text-align: center;
+      }
+      #usernameInput {
+        padding: 10px;
+        width: 200px;
+      }
+      #loginButton {
+        padding: 10px 20px;
+        margin-left: 10px;
+        background-color: #90ee90;
+      }
+    </style>
+    <script>
+      var currentUser = null;
+      var lastMessageId = 0;
+      var pollingInterval = null;
+
+      function userLogin() {
+        var input = document.getElementById("usernameInput");
+        var name = input.value.trim();
+        if (name === "") {
+          alert("Please enter a username.");
+          return;
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/login", true);
+        xhr.withCredentials = true;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4 && xhr.status === 200) {
+            currentUser = name;
+            document.getElementById("loginForm").style.display = "none";
+            document.getElementById("chatContainer").style.display = "block";
+            fetchMessages();
+          }
+        };
+        var data = JSON.stringify({ username: name });
+        xhr.send(data);
+      }
+
+      function sendMessage() {
+        var input = document.getElementById("messageInput");
+        var message = input.value.trim();
+        if (message === "") {
+          alert("Please enter a message.");
+          return;
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/messages", true);
+        xhr.withCredentials = true;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4 && xhr.status === 200) {
+            input.value = "";
+          }
+        };
+        var data = JSON.stringify({ message: message });
+        xhr.send(data);
+      }
+
+      function fetchMessages() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/api/messages?last=" + lastMessageId, true);
+        xhr.withCredentials = true;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4 && xhr.status === 200) {
+            var messages = JSON.parse(xhr.responseText);
+            var messagesDiv = document.getElementById("messageDisplay");
+            for (var i = 0; i < messages.length; i++) {
+              var msg = messages[i];
+              var msgDiv = document.createElement("div");
+              msgDiv.className = "message";
+              msgDiv.setAttribute("data-message-id", msg.id);
+
+              var usernameDiv = document.createElement("div");
+              usernameDiv.className = "username";
+              usernameDiv.textContent = msg.username;
+
+              var messageDiv = document.createElement("div");
+              messageDiv.className = "text";
+              messageDiv.textContent = msg.message;
+
+              msgDiv.appendChild(usernameDiv);
+              msgDiv.appendChild(messageDiv);
+
+              // If the message is owned by the logged-in user, add a delete button
+              if (msg.username === currentUser) {
+                var deleteButton = document.createElement("button");
+                deleteButton.textContent = "Delete";
+                deleteButton.className = "delete-button";
+                deleteButton.onclick = function () {
+                  var messageId =
+                    this.parentElement.getAttribute("data-message-id");
+                  deleteMessage(messageId);
+                };
+                msgDiv.appendChild(deleteButton);
+              }
+
+              messagesDiv.appendChild(msgDiv);
+              lastMessageId = msg.id;
+            }
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+          }
+        };
+        xhr.send();
+        pollingInterval = setTimeout(fetchMessages, 2000);
+      }
+
+      function deleteMessage(messageId) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("DELETE", "/api/messages/" + messageId, true);
+        xhr.withCredentials = true;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+              // Remove the message from the UI
+              var messagesDiv = document.getElementById("messageDisplay");
+              var messageDiv = messagesDiv.querySelector(
+                'div[data-message-id="' + messageId + '"]'
+              );
+              if (messageDiv) {
+                messagesDiv.removeChild(messageDiv);
+              }
+            } else {
+              alert("Failed to delete the message.");
+            }
+          }
+        };
+        xhr.send();
+      }
+
+      function userLogout() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("DELETE", "/api/login", true);
+        xhr.withCredentials = true;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4 && xhr.status === 200) {
+            currentUser = null;
+            document.getElementById("chatContainer").style.display = "none";
+            document.getElementById("loginForm").style.display = "block";
+            document.getElementById("messageDisplay").innerHTML = "";
+            lastMessageId = 0;
+            clearTimeout(pollingInterval);
+          }
+        };
+        xhr.send();
+      }
+
+      function checkUserLogin() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/api/login", true);
+        xhr.withCredentials = true;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+              var data = JSON.parse(xhr.responseText);
+              currentUser = data.username;
+              document.getElementById("loginForm").style.display = "none";
+              document.getElementById("chatContainer").style.display = "block";
+              fetchMessages();
+            } else {
+              document.getElementById("loginForm").style.display = "block";
+              document.getElementById("chatContainer").style.display = "none";
+            }
+          }
+        };
+        xhr.send();
+      }
+
+      window.onload = function () {
+        checkUserLogin();
+      };
+    </script>
+  </head>
+  <body>
+    <div id="loginForm">
+      <h2>Discordn't Web App</h2>
+      <input type="text" id="usernameInput" placeholder="Enter your username" />
+      <button id="loginButton" onclick="userLogin()">Login</button>
+    </div>
+    <div id="chatContainer" style="display: none">
+      <div>
+        <input
+          type="text"
+          id="messageInput"
+          placeholder="Type your message here"
+        />
+        <button id="sendButton" onclick="sendMessage()">Send</button>
+        <button id="logoutButton" onclick="userLogout()">Logout</button>
+      </div>
+      <div id="messageDisplay"></div>
+    </div>
+  </body>
+</html>
